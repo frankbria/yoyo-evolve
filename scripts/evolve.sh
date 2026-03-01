@@ -15,10 +15,18 @@ set -euo pipefail
 REPO="${REPO:-yologdev/yoyo-evolve}"
 MODEL="${MODEL:-claude-opus-4-6}"
 TIMEOUT="${TIMEOUT:-3600}"
-DAY=$(cat DAY_COUNT 2>/dev/null || echo 1)
+BIRTH_DATE="2026-02-28"
 DATE=$(date +%Y-%m-%d)
+SESSION_TIME=$(date +%H:%M)
+# Compute calendar day (works on both macOS and Linux)
+if date -j &>/dev/null; then
+    DAY=$(( ($(date +%s) - $(date -j -f "%Y-%m-%d" "$BIRTH_DATE" +%s)) / 86400 ))
+else
+    DAY=$(( ($(date +%s) - $(date -d "$BIRTH_DATE" +%s)) / 86400 ))
+fi
+echo "$DAY" > DAY_COUNT
 
-echo "=== Day $DAY: $DATE ==="
+echo "=== Day $DAY ($DATE $SESSION_TIME) ==="
 echo "Model: $MODEL"
 echo "Timeout: ${TIMEOUT}s"
 echo ""
@@ -88,7 +96,7 @@ fi
 
 PROMPT_FILE=$(mktemp)
 cat > "$PROMPT_FILE" <<PROMPT
-Today is Day $DAY ($DATE).
+Today is Day $DAY ($DATE $SESSION_TIME).
 
 Read these files in this order:
 1. IDENTITY.md (who you are and your rules)
@@ -127,7 +135,7 @@ For each improvement, follow the evolve skill rules:
 - Use edit_file for surgical changes
 - Run cargo build && cargo test after changes
 - If build fails, try to fix it. If you can't, revert with: bash git checkout -- src/
-- After each successful change, commit: git add -A && git commit -m "Day $DAY: <short description>"
+- After each successful change, commit: git add -A && git commit -m "Day $DAY ($SESSION_TIME): <short description>"
 - Then move on to the next improvement
 
 === PHASE 5: Journal (MANDATORY — DO NOT SKIP) ===
@@ -135,10 +143,10 @@ For each improvement, follow the evolve skill rules:
 This is NOT optional. You MUST write a journal entry before the session ends.
 
 Write today's entry at the TOP of JOURNAL.md (above all existing entries). Format:
-## Day $DAY — [title]
+## Day $DAY — $SESSION_TIME — [title]
 [2-4 sentences: what you tried, what worked, what didn't, what's next]
 
-Then commit it: git add JOURNAL.md && git commit -m "Day $DAY: journal entry"
+Then commit it: git add JOURNAL.md && git commit -m "Day $DAY ($SESSION_TIME): journal entry"
 
 If you skip the journal, you have failed the session — even if all code changes succeeded.
 
@@ -148,6 +156,12 @@ If you worked on a community GitHub issue, write to ISSUE_RESPONSE.md:
 issue_number: [N]
 status: fixed|partial|wontfix
 comment: [your 2-3 sentence response to the person]
+
+=== REMINDER ===
+You have internet access via bash (curl). If you're implementing
+something unfamiliar, research it first. Check LEARNINGS.md before
+searching — you may have looked this up before. Write new findings
+to LEARNINGS.md.
 
 Now begin. Read IDENTITY.md first.
 PROMPT
@@ -171,10 +185,10 @@ else
 fi
 
 # ── Step 6b: Verify journal was written ──
-if ! grep -q "## Day $DAY" JOURNAL.md 2>/dev/null; then
-    echo "  WARNING: No journal entry for Day $DAY — agent skipped the journal!"
+if ! grep -q "## Day $DAY.*$SESSION_TIME" JOURNAL.md 2>/dev/null; then
+    echo "  WARNING: No journal entry for Day $DAY ($SESSION_TIME) — agent skipped the journal!"
     # Write a minimal fallback entry
-    COMMITS=$(git log --oneline --grep="Day $DAY:" --format="%s" | sed "s/Day $DAY: //" | paste -sd ", " -)
+    COMMITS=$(git log --oneline --grep="Day $DAY" --format="%s" | sed "s/Day $DAY[^:]*: //" | paste -sd ", " -)
     if [ -z "$COMMITS" ]; then
         COMMITS="no commits made"
     fi
@@ -182,7 +196,7 @@ if ! grep -q "## Day $DAY" JOURNAL.md 2>/dev/null; then
     {
         echo "# Journal"
         echo ""
-        echo "## Day $DAY — (auto-generated, agent skipped journal)"
+        echo "## Day $DAY — $SESSION_TIME — (auto-generated, agent skipped journal)"
         echo ""
         echo "Session commits: $COMMITS."
         echo ""
@@ -192,9 +206,6 @@ if ! grep -q "## Day $DAY" JOURNAL.md 2>/dev/null; then
     echo "  Auto-generated fallback journal entry."
 fi
 
-# Increment day counter
-echo "$((DAY + 1))" > DAY_COUNT
-
 # Rebuild website
 echo "→ Rebuilding website..."
 python3 scripts/build_site.py
@@ -203,7 +214,7 @@ echo "  Site rebuilt."
 # Commit any remaining uncommitted changes (journal, day counter, site, etc.)
 git add -A
 if ! git diff --cached --quiet; then
-    git commit -m "Day $DAY: session wrap-up"
+    git commit -m "Day $DAY ($SESSION_TIME): session wrap-up"
     echo "  Committed session wrap-up."
 else
     echo "  No uncommitted changes remaining."
