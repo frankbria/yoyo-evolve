@@ -178,8 +178,17 @@ if ! grep -q "## Day $DAY" JOURNAL.md 2>/dev/null; then
     if [ -z "$COMMITS" ]; then
         COMMITS="no commits made"
     fi
-    ENTRY="## Day $DAY — (auto-generated, agent skipped journal)\n\nSession commits: $COMMITS.\n"
-    sed -i.bak "s/^# Journal$/# Journal\n\n$ENTRY/" JOURNAL.md && rm -f JOURNAL.md.bak
+    TMPJ=$(mktemp)
+    {
+        echo "# Journal"
+        echo ""
+        echo "## Day $DAY — (auto-generated, agent skipped journal)"
+        echo ""
+        echo "Session commits: $COMMITS."
+        echo ""
+        tail -n +2 JOURNAL.md
+    } > "$TMPJ"
+    mv "$TMPJ" JOURNAL.md
     echo "  Auto-generated fallback journal entry."
 fi
 
