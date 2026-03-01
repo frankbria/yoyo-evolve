@@ -58,6 +58,7 @@ fn print_help() {
     println!("  /clear            Clear conversation history");
     println!("  /model <name>     Switch model mid-session");
     println!("  /status           Show session info");
+    println!("  /tokens           Show token usage and context window");
     println!("  /save [path]      Save session to file");
     println!("  /load [path]      Load session from file");
     println!("  /diff             Show git diff summary");
@@ -245,6 +246,7 @@ async fn main() {
                 println!("  /clear             Clear conversation history");
                 println!("  /model <name>      Switch model (clears conversation)");
                 println!("  /status            Show session info");
+                println!("  /tokens            Show token usage and context window");
                 println!("  /save [path]       Save session to file (default: yoyo-session.json)");
                 println!("  /load [path]       Load session from file");
                 println!("  /diff              Show git diff summary of uncommitted changes");
@@ -264,6 +266,43 @@ async fn main() {
                     "  tokens:  {} in / {} out (session total){RESET}\n",
                     session_total.input, session_total.output
                 );
+                continue;
+            }
+            "/tokens" => {
+                // Anthropic models all have 200k context windows.
+                // If we add non-Anthropic providers later, this will need updating.
+                let max_context: u64 = 200_000;
+
+                let total_used = session_total.input + session_total.output;
+                let bar = context_bar(total_used, max_context);
+
+                println!("{DIM}  Context usage:");
+                println!(
+                    "    input:       {} tokens",
+                    format_token_count(session_total.input)
+                );
+                println!(
+                    "    output:      {} tokens",
+                    format_token_count(session_total.output)
+                );
+                println!(
+                    "    cache read:  {} tokens",
+                    format_token_count(session_total.cache_read)
+                );
+                println!(
+                    "    cache write: {} tokens",
+                    format_token_count(session_total.cache_write)
+                );
+                println!(
+                    "    total:       {} / {} tokens",
+                    format_token_count(total_used),
+                    format_token_count(max_context)
+                );
+                println!("    {bar}");
+                if total_used as f64 / max_context as f64 > 0.75 {
+                    println!("    {YELLOW}⚠ Context is getting full. Consider /clear or /compact.{RESET}");
+                }
+                println!("{RESET}");
                 continue;
             }
             "/clear" => {
@@ -340,6 +379,29 @@ async fn main() {
     }
 
     println!("\n{DIM}  bye 👋{RESET}\n");
+}
+
+/// Format a token count for display (e.g., 1500 -> "1.5k").
+fn format_token_count(count: u64) -> String {
+    if count < 1000 {
+        format!("{count}")
+    } else {
+        format!("{:.1}k", count as f64 / 1000.0)
+    }
+}
+
+/// Build a context usage bar (e.g., "████████░░░░░░░░░░░░ 40%").
+fn context_bar(used: u64, max: u64) -> String {
+    let pct = if max == 0 {
+        0.0
+    } else {
+        (used as f64 / max as f64).min(1.0)
+    };
+    let width = 20;
+    let filled = (pct * width as f64).round() as usize;
+    let empty = width - filled;
+    let bar: String = "█".repeat(filled) + &"░".repeat(empty);
+    format!("{bar} {:.0}%", pct * 100.0)
 }
 
 /// Get the current git branch name, if we're in a git repo.
@@ -641,11 +703,11 @@ mod tests {
     #[test]
     fn test_command_help_recognized() {
         let commands = [
-            "/help", "/quit", "/exit", "/clear", "/status", "/save", "/load", "/diff",
+            "/help", "/quit", "/exit", "/clear", "/status", "/tokens", "/save", "/load", "/diff",
         ];
         for cmd in &commands {
             assert!(
-                ["/help", "/quit", "/exit", "/clear", "/status", "/save", "/load", "/diff"]
+                ["/help", "/quit", "/exit", "/clear", "/status", "/tokens", "/save", "/load", "/diff"]
                     .contains(cmd),
                 "Command not recognized: {cmd}"
             );
@@ -785,6 +847,30 @@ mod tests {
             .and_then(|i| args.get(i + 1))
             .cloned();
         assert_eq!(system_file, Some("prompt.txt".to_string()));
+    }
+
+    #[test]
+    fn test_format_token_count() {
+        assert_eq!(format_token_count(0), "0");
+        assert_eq!(format_token_count(999), "999");
+        assert_eq!(format_token_count(1000), "1.0k");
+        assert_eq!(format_token_count(1500), "1.5k");
+        assert_eq!(format_token_count(10000), "10.0k");
+        assert_eq!(format_token_count(150000), "150.0k");
+        assert_eq!(format_token_count(1000000), "1000.0k");
+    }
+
+    #[test]
+    fn test_context_bar() {
+        let bar = context_bar(50000, 200000);
+        assert!(bar.contains('█'));
+        assert!(bar.contains("25%"));
+
+        let bar_empty = context_bar(0, 200000);
+        assert!(bar_empty.contains("0%"));
+
+        let bar_full = context_bar(200000, 200000);
+        assert!(bar_full.contains("100%"));
     }
 
     #[test]
