@@ -18,7 +18,9 @@
 //!   /clear          Clear conversation history
 //!   /model <name>   Switch model mid-session
 
+use std::collections::HashMap;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
+use std::time::Instant;
 use yoagent::agent::Agent;
 use yoagent::context::{compact_messages, total_tokens, ContextConfig};
 use yoagent::provider::AnthropicProvider;
@@ -533,6 +535,20 @@ fn auto_compact_if_needed(agent: &mut Agent) {
     }
 }
 
+/// Format a duration for display (e.g., "1.2s", "350ms", "2m 15s").
+fn format_duration(d: std::time::Duration) -> String {
+    let ms = d.as_millis();
+    if ms < 1000 {
+        format!("{ms}ms")
+    } else if ms < 60_000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else {
+        let mins = ms / 60_000;
+        let secs = (ms % 60_000) / 1000;
+        format!("{mins}m {secs}s")
+    }
+}
+
 /// Format a token count for display (e.g., 1500 -> "1.5k", 1000000 -> "1.0M").
 fn format_token_count(count: u64) -> String {
     if count < 1000 {
@@ -634,6 +650,7 @@ async fn run_prompt(agent: &mut Agent, input: &str, session_total: &mut Usage) {
     let mut rx = agent.prompt(input).await;
     let mut last_usage = Usage::default();
     let mut in_text = false;
+    let mut tool_timers: HashMap<String, Instant> = HashMap::new();
 
     loop {
         tokio::select! {
@@ -641,21 +658,28 @@ async fn run_prompt(agent: &mut Agent, input: &str, session_total: &mut Usage) {
                 let Some(event) = event else { break };
                 match event {
                     AgentEvent::ToolExecutionStart {
-                        tool_name, args, ..
+                        tool_call_id, tool_name, args, ..
                     } => {
                         if in_text {
                             println!();
                             in_text = false;
                         }
+                        tool_timers.insert(tool_call_id.clone(), Instant::now());
                         let summary = format_tool_summary(&tool_name, &args);
                         print!("{YELLOW}  ▶ {summary}{RESET}");
                         io::stdout().flush().ok();
                     }
-                    AgentEvent::ToolExecutionEnd { is_error, .. } => {
+                    AgentEvent::ToolExecutionEnd { tool_call_id, is_error, .. } => {
+                        let duration = tool_timers
+                            .remove(&tool_call_id)
+                            .map(|start| format_duration(start.elapsed()));
+                        let dur_str = duration
+                            .map(|d| format!(" {DIM}({d}){RESET}"))
+                            .unwrap_or_default();
                         if is_error {
-                            println!(" {RED}✗{RESET}");
+                            println!(" {RED}✗{RESET}{dur_str}");
                         } else {
-                            println!(" {GREEN}✓{RESET}");
+                            println!(" {GREEN}✓{RESET}{dur_str}");
                         }
                     }
                     AgentEvent::MessageUpdate {
@@ -1134,6 +1158,50 @@ mod tests {
     fn test_auto_compact_threshold_constants() {
         assert_eq!(MAX_CONTEXT_TOKENS, 200_000);
         assert!((AUTO_COMPACT_THRESHOLD - 0.80).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_format_duration_ms() {
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(50)),
+            "50ms"
+        );
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(999)),
+            "999ms"
+        );
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(1000)),
+            "1.0s"
+        );
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(1500)),
+            "1.5s"
+        );
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(30000)),
+            "30.0s"
+        );
+    }
+
+    #[test]
+    fn test_format_duration_minutes() {
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(60000)),
+            "1m 0s"
+        );
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(90000)),
+            "1m 30s"
+        );
+        assert_eq!(
+            format_duration(std::time::Duration::from_millis(125000)),
+            "2m 5s"
+        );
     }
 
     #[test]
