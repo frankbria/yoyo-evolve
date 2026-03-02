@@ -165,25 +165,29 @@ to LEARNINGS.md.
 Now begin. Read IDENTITY.md first.
 PROMPT
 
+AGENT_LOG=$(mktemp)
 MAX_RETRIES=3
 for ATTEMPT in $(seq 1 $MAX_RETRIES); do
-    if ${TIMEOUT_CMD:+$TIMEOUT_CMD "$TIMEOUT"} cargo run -- \
+    ${TIMEOUT_CMD:+$TIMEOUT_CMD "$TIMEOUT"} cargo run -- \
         --model "$MODEL" \
         --skills ./skills \
-        < "$PROMPT_FILE"; then
-        break
-    else
+        < "$PROMPT_FILE" 2>&1 | tee "$AGENT_LOG" || true
+
+    # Check if the agent actually did work (made commits) or hit an API error
+    if grep -q '"type":"error"' "$AGENT_LOG"; then
         if [ "$ATTEMPT" -lt "$MAX_RETRIES" ]; then
             WAIT=$((ATTEMPT * 1800))
-            echo "  Agent failed (attempt $ATTEMPT/$MAX_RETRIES). Retrying in ${WAIT}s..."
+            echo "  API error (attempt $ATTEMPT/$MAX_RETRIES). Retrying in ${WAIT}s..."
             sleep "$WAIT"
         else
-            echo "  Agent failed after $MAX_RETRIES attempts."
+            echo "  API error persisted after $MAX_RETRIES attempts."
         fi
+    else
+        break
     fi
 done
 
-rm -f "$PROMPT_FILE"
+rm -f "$PROMPT_FILE" "$AGENT_LOG"
 
 echo ""
 echo "→ Session complete. Checking results..."
