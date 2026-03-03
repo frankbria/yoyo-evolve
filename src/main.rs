@@ -323,6 +323,7 @@ async fn main() {
                 println!("  /diff              Show git diff summary of uncommitted changes");
                 println!("  /undo              Revert all uncommitted changes (git checkout)");
                 println!("  /retry             Re-send the last user input");
+                println!("  /history           Show summary of conversation messages");
                 println!();
                 println!("  Multi-line input:");
                 println!("  End a line with \\ to continue on the next line");
@@ -477,6 +478,21 @@ async fn main() {
                         }
                     }
                     _ => eprintln!("{RED}  error: not in a git repository{RESET}\n"),
+                }
+                continue;
+            }
+            "/history" => {
+                let messages = agent.messages();
+                if messages.is_empty() {
+                    println!("{DIM}  (no messages in conversation){RESET}\n");
+                } else {
+                    println!("{DIM}  Conversation ({} messages):", messages.len());
+                    for (i, msg) in messages.iter().enumerate() {
+                        let (role, preview) = summarize_message(msg);
+                        let idx = i + 1;
+                        println!("    {idx:>3}. [{role}] {preview}");
+                    }
+                    println!("{RESET}");
                 }
                 continue;
             }
@@ -837,6 +853,59 @@ async fn run_prompt(agent: &mut Agent, input: &str, session_total: &mut Usage, m
     println!();
 }
 
+/// Summarize a message for /history display.
+fn summarize_message(msg: &AgentMessage) -> (&str, String) {
+    match msg {
+        AgentMessage::Llm(Message::User { content, .. }) => {
+            let text = content
+                .iter()
+                .filter_map(|c| match c {
+                    Content::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            ("user", truncate_with_ellipsis(&text, 80))
+        }
+        AgentMessage::Llm(Message::Assistant { content, .. }) => {
+            let mut parts = Vec::new();
+            let mut tool_calls = 0;
+            for c in content {
+                match c {
+                    Content::Text { text } if !text.is_empty() => {
+                        parts.push(truncate_with_ellipsis(text, 60));
+                    }
+                    Content::ToolCall { name, .. } => {
+                        tool_calls += 1;
+                        if tool_calls <= 3 {
+                            parts.push(format!("→{name}"));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if tool_calls > 3 {
+                parts.push(format!("(+{} more tools)", tool_calls - 3));
+            }
+            let preview = if parts.is_empty() {
+                "(empty)".to_string()
+            } else {
+                parts.join("  ")
+            };
+            ("assistant", preview)
+        }
+        AgentMessage::Llm(Message::ToolResult {
+            tool_name,
+            is_error,
+            ..
+        }) => {
+            let status = if *is_error { "✗" } else { "✓" };
+            ("tool", format!("{tool_name} {status}"))
+        }
+        AgentMessage::Extension(ext) => ("ext", truncate_with_ellipsis(&ext.role, 60)),
+    }
+}
+
 /// Format a human-readable summary for a tool execution.
 fn format_tool_summary(tool_name: &str, args: &serde_json::Value) -> String {
     match tool_name {
@@ -971,13 +1040,13 @@ mod tests {
     fn test_command_help_recognized() {
         let commands = [
             "/help", "/quit", "/exit", "/clear", "/compact", "/status", "/tokens", "/save",
-            "/load", "/diff", "/undo", "/retry",
+            "/load", "/diff", "/undo", "/retry", "/history",
         ];
         for cmd in &commands {
             assert!(
                 [
                     "/help", "/quit", "/exit", "/clear", "/compact", "/status", "/tokens", "/save",
-                    "/load", "/diff", "/undo", "/retry"
+                    "/load", "/diff", "/undo", "/retry", "/history"
                 ]
                 .contains(cmd),
                 "Command not recognized: {cmd}"
@@ -1361,5 +1430,46 @@ mod tests {
         // simple slash check — they're handled by starts_with("/model ") etc.
         let with_space = "/model claude-opus-4-6";
         assert!(with_space.starts_with('/') && with_space.contains(' '));
+    }
+
+    #[test]
+    fn test_summarize_message_user() {
+        let msg = AgentMessage::Llm(Message::user("hello world, this is a test"));
+        let (role, preview) = summarize_message(&msg);
+        assert_eq!(role, "user");
+        assert!(preview.contains("hello world"));
+    }
+
+    #[test]
+    fn test_summarize_message_tool_result() {
+        let msg = AgentMessage::Llm(Message::ToolResult {
+            tool_call_id: "tc_1".into(),
+            tool_name: "bash".into(),
+            content: vec![Content::Text {
+                text: "output".into(),
+            }],
+            is_error: false,
+            timestamp: 0,
+        });
+        let (role, preview) = summarize_message(&msg);
+        assert_eq!(role, "tool");
+        assert!(preview.contains("bash"));
+        assert!(preview.contains("✓"));
+    }
+
+    #[test]
+    fn test_summarize_message_tool_result_error() {
+        let msg = AgentMessage::Llm(Message::ToolResult {
+            tool_call_id: "tc_2".into(),
+            tool_name: "bash".into(),
+            content: vec![Content::Text {
+                text: "error".into(),
+            }],
+            is_error: true,
+            timestamp: 0,
+        });
+        let (role, preview) = summarize_message(&msg);
+        assert_eq!(role, "tool");
+        assert!(preview.contains("✗"));
     }
 }
