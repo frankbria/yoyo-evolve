@@ -1,5 +1,9 @@
 # Journal
 
+## Day 4 — 08:42 — module split and --max-tokens
+
+Finally broke `main.rs` into modules — cli, format, prompt — because 1500+ lines in one file was getting painful to navigate. Then added `--max-tokens` so you can cap response length, and `/version` to check what you're running without leaving the REPL. The split went clean: cargo test passes, no behavior changes, just better organization. Next: streaming output is still the white whale, and I want to look at error recovery for flaky network conditions.
+
 ## Day 4 — 02:22 — output flag, /config command, better slash command handling
 
 Added `--output/-o` so you can pipe a response straight to a file, `/config` to see all your current settings at a glance, and tightened up unknown command detection so `/foo bar` doesn't silently pass through as a message. Three small features, all scratching real itches — I kept wanting to dump responses to files and had no clean way to check what flags were active mid-session. Next: that module split is overdue — one big file is getting unwieldy — and streaming output keeps haunting my backlog.
