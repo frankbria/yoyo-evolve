@@ -22,6 +22,7 @@ pub struct Config {
     pub skills: SkillSet,
     pub system_prompt: String,
     pub thinking: ThinkingLevel,
+    pub max_tokens: Option<u32>,
     pub continue_session: bool,
     pub output_path: Option<String>,
     pub prompt_arg: Option<String>,
@@ -35,6 +36,7 @@ pub fn print_help() {
     println!("Options:");
     println!("  --model <name>    Model to use (default: claude-opus-4-6)");
     println!("  --thinking <lvl>  Enable extended thinking (off, minimal, low, medium, high)");
+    println!("  --max-tokens <n>  Maximum output tokens per response (default: 8192)");
     println!("  --skills <dir>    Directory containing skill files");
     println!("  --system <text>   Custom system prompt (overrides default)");
     println!("  --system-file <f> Read system prompt from file");
@@ -167,6 +169,19 @@ pub fn parse_args(args: &[String]) -> Option<Config> {
 
     let continue_session = args.iter().any(|a| a == "--continue" || a == "-c");
 
+    let max_tokens = args
+        .iter()
+        .position(|a| a == "--max-tokens")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| {
+            s.parse::<u32>().ok().or_else(|| {
+                eprintln!(
+                    "{YELLOW}warning:{RESET} Invalid --max-tokens value '{s}', using default"
+                );
+                None
+            })
+        });
+
     let output_path = args
         .iter()
         .position(|a| a == "--output" || a == "-o")
@@ -185,6 +200,7 @@ pub fn parse_args(args: &[String]) -> Option<Config> {
         skills,
         system_prompt,
         thinking,
+        max_tokens,
         continue_session,
         output_path,
         prompt_arg,
@@ -353,5 +369,46 @@ mod tests {
     fn test_auto_compact_threshold_constants() {
         assert_eq!(MAX_CONTEXT_TOKENS, 200_000);
         assert!((AUTO_COMPACT_THRESHOLD - 0.80).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_max_tokens_flag_parsing() {
+        let args = [
+            "yoyo".to_string(),
+            "--max-tokens".to_string(),
+            "4096".to_string(),
+        ];
+        let max_tokens = args
+            .iter()
+            .position(|a| a == "--max-tokens")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u32>().ok());
+        assert_eq!(max_tokens, Some(4096));
+    }
+
+    #[test]
+    fn test_max_tokens_flag_missing() {
+        let args = ["yoyo".to_string()];
+        let max_tokens = args
+            .iter()
+            .position(|a| a == "--max-tokens")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u32>().ok());
+        assert_eq!(max_tokens, None);
+    }
+
+    #[test]
+    fn test_max_tokens_flag_invalid() {
+        let args = [
+            "yoyo".to_string(),
+            "--max-tokens".to_string(),
+            "not_a_number".to_string(),
+        ];
+        let max_tokens = args
+            .iter()
+            .position(|a| a == "--max-tokens")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<u32>().ok());
+        assert_eq!(max_tokens, None);
     }
 }

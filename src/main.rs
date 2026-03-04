@@ -41,14 +41,19 @@ fn build_agent(
     skills: &yoagent::skills::SkillSet,
     system_prompt: &str,
     thinking: ThinkingLevel,
+    max_tokens: Option<u32>,
 ) -> Agent {
-    Agent::new(AnthropicProvider)
+    let mut agent = Agent::new(AnthropicProvider)
         .with_system_prompt(system_prompt)
         .with_model(model)
         .with_api_key(api_key)
         .with_thinking(thinking)
         .with_skills(skills.clone())
-        .with_tools(default_tools())
+        .with_tools(default_tools());
+    if let Some(max) = max_tokens {
+        agent = agent.with_max_tokens(max);
+    }
+    agent
 }
 
 #[tokio::main]
@@ -64,10 +69,18 @@ async fn main() {
     let skills = config.skills;
     let system_prompt = config.system_prompt;
     let thinking = config.thinking;
+    let max_tokens = config.max_tokens;
     let continue_session = config.continue_session;
     let output_path = config.output_path;
 
-    let mut agent = build_agent(&model, &api_key, &skills, &system_prompt, thinking);
+    let mut agent = build_agent(
+        &model,
+        &api_key,
+        &skills,
+        &system_prompt,
+        thinking,
+        max_tokens,
+    );
 
     // --continue / -c: resume last saved session
     if continue_session {
@@ -247,7 +260,14 @@ async fn main() {
                 continue;
             }
             "/clear" => {
-                agent = build_agent(&model, &api_key, &skills, &system_prompt, thinking);
+                agent = build_agent(
+                    &model,
+                    &api_key,
+                    &skills,
+                    &system_prompt,
+                    thinking,
+                    max_tokens,
+                );
                 println!("{DIM}  (conversation cleared){RESET}\n");
                 continue;
             }
@@ -264,7 +284,14 @@ async fn main() {
                     continue;
                 }
                 model = new_model.to_string();
-                agent = build_agent(&model, &api_key, &skills, &system_prompt, thinking);
+                agent = build_agent(
+                    &model,
+                    &api_key,
+                    &skills,
+                    &system_prompt,
+                    thinking,
+                    max_tokens,
+                );
                 println!("{DIM}  (switched to {new_model}, conversation cleared){RESET}\n");
                 continue;
             }
@@ -379,6 +406,12 @@ async fn main() {
                     } else {
                         format!("{thinking:?}").to_lowercase()
                     }
+                );
+                println!(
+                    "    max_tokens: {}",
+                    max_tokens
+                        .map(|m| m.to_string())
+                        .unwrap_or_else(|| "default (8192)".to_string())
                 );
                 println!(
                     "    skills:     {}",
