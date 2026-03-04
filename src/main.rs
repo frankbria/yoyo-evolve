@@ -61,7 +61,8 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     // Check --no-color before any output (must happen before parse_args prints anything)
-    if args.iter().any(|a| a == "--no-color") {
+    // Also auto-disable color when stdout is not a terminal (piped output)
+    if args.iter().any(|a| a == "--no-color") || !io::stdout().is_terminal() {
         disable_color();
     }
 
