@@ -302,7 +302,7 @@ async fn main() {
                 println!("{DIM}  (switched to {new_model}, conversation cleared){RESET}\n");
                 continue;
             }
-            s if s.starts_with("/save") => {
+            s if s == "/save" || s.starts_with("/save ") => {
                 let path = s.strip_prefix("/save").unwrap_or("").trim();
                 let path = if path.is_empty() {
                     DEFAULT_SESSION_PATH
@@ -321,7 +321,7 @@ async fn main() {
                 }
                 continue;
             }
-            s if s.starts_with("/load") => {
+            s if s == "/load" || s.starts_with("/load ") => {
                 let path = s.strip_prefix("/load").unwrap_or("").trim();
                 let path = if path.is_empty() {
                     DEFAULT_SESSION_PATH
@@ -760,6 +760,9 @@ mod tests {
         assert!(is_unknown_command("/foo"));
         assert!(is_unknown_command("/foo bar baz"));
         assert!(is_unknown_command("/unknown argument"));
+        // Verify typo-like commands are caught as unknown
+        assert!(is_unknown_command("/savefile"));
+        assert!(is_unknown_command("/loadfile"));
 
         assert!(!is_unknown_command("/help"));
         assert!(!is_unknown_command("/quit"));
@@ -770,6 +773,25 @@ mod tests {
         assert!(!is_unknown_command("/load"));
         assert!(!is_unknown_command("/load myfile.json"));
         assert!(!is_unknown_command("/config"));
+        assert!(!is_unknown_command("/context"));
         assert!(!is_unknown_command("/version"));
+    }
+
+    #[test]
+    fn test_save_load_command_matching() {
+        // /save and /load should only match exact word or with space separator
+        // This tests the fix for /savefile being treated as /save
+        let save_matches = |s: &str| s == "/save" || s.starts_with("/save ");
+        let load_matches = |s: &str| s == "/load" || s.starts_with("/load ");
+
+        assert!(save_matches("/save"));
+        assert!(save_matches("/save myfile.json"));
+        assert!(!save_matches("/savefile"));
+        assert!(!save_matches("/saveXYZ"));
+
+        assert!(load_matches("/load"));
+        assert!(load_matches("/load myfile.json"));
+        assert!(!load_matches("/loadfile"));
+        assert!(!load_matches("/loadXYZ"));
     }
 }
