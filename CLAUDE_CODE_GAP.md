@@ -19,7 +19,7 @@ This document tracks the feature gap between yoyo and Claude Code, used to infor
 | Tool execution | ✅ | ✅ | bash, read_file, write_file, edit_file, search, list_files |
 | Multi-turn conversation | ✅ | ✅ | Both maintain conversation history |
 | Thinking/reasoning display | ✅ | ✅ | yoyo shows thinking dimmed |
-| Error recovery / auto-retry | ❌ | ✅ | Claude Code retries on network errors, rate limits |
+| Error recovery / auto-retry | ✅ | ✅ | yoagent retries 3x with exponential backoff by default |
 | Parallel tool execution | ❌ | ✅ | Claude Code can run multiple tools in parallel |
 | Tool output streaming | ❌ | ✅ | Claude Code streams long-running tool output |
 
@@ -87,8 +87,8 @@ This document tracks the feature gap between yoyo and Claude Code, used to infor
 
 | Feature | yoyo | Claude Code | Notes |
 |---------|------|-------------|-------|
-| Config file | ❌ | ✅ | Claude Code has ~/.claude/config.json |
-| Per-project settings | ❌ | ✅ | Claude Code reads .claude/ directory |
+| Config file | ✅ | ✅ | yoyo reads .yoyo.toml and ~/.config/yoyo/config.toml |
+| Per-project settings | ✅ | ✅ | .yoyo.toml in project directory |
 | Custom tool definitions | ❌ | ✅ | Claude Code supports MCP servers |
 | Skills/plugins | ✅ | ✅ | yoyo has --skills; Claude Code has MCP |
 
@@ -97,8 +97,8 @@ This document tracks the feature gap between yoyo and Claude Code, used to infor
 | Feature | yoyo | Claude Code | Notes |
 |---------|------|-------------|-------|
 | API error display | ✅ | ✅ | Shows error messages |
-| Network retry | ❌ | ✅ | Claude Code retries transient failures |
-| Rate limit handling | ❌ | ✅ | Claude Code backs off on 429s |
+| Network retry | ✅ | ✅ | yoagent handles 3 retries with exponential backoff by default |
+| Rate limit handling | ✅ | ✅ | yoagent respects retry-after headers on 429s |
 | Graceful degradation | ❌ | ✅ | Claude Code falls back on partial failures |
 | Ctrl+C handling | ✅ | ✅ | Both handle interrupts |
 
@@ -110,15 +110,16 @@ Based on this analysis, the highest-impact missing features are:
 
 1. **Readline/line editing** — Every interactive session suffers without arrow keys and command history
 2. **Permission system** — Safety-critical for real-world use
-3. **Network retry/rate limit handling** — Reliability for long sessions
-4. **Config file support** — Users shouldn't need to pass flags every time
-5. **Project context files** (like CLAUDE.md) — Let projects configure the agent
-6. **Syntax highlighting / markdown rendering** — Makes output much more readable
-7. **Auto-detect project type** — Better default behavior
+3. **Syntax highlighting / markdown rendering** — Makes output much more readable
+4. **Project context files** (like CLAUDE.md) — Let projects provide instructions to the agent
+5. **Auto-detect project type** — Better default behavior
+6. **Parallel tool execution** — Speed up multi-tool workflows
+7. **Tab completion** — File paths and commands
 
 ## Stats
 
-- yoyo: ~2,000 lines of Rust across 4 source files
-- 60 tests passing
+- yoyo: ~2,168 lines of Rust across 4 source files
+- 66 tests passing
 - 16 REPL commands
 - 12 CLI flags
+- Config file support (.yoyo.toml)
