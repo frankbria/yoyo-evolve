@@ -196,6 +196,7 @@ async fn main() {
                 println!("  /compact           Compact conversation to save context space");
                 println!("  /config            Show all current settings");
                 println!("  /context           Show loaded project context files");
+                println!("  /cost              Show estimated session cost");
                 println!("  /init              Create a starter YOYO.md project context file");
                 println!("  /model <name>      Switch model (clears conversation)");
                 println!("  /status            Show session info");
@@ -272,6 +273,27 @@ async fn main() {
                     println!("    est. cost:   {}", format_cost(cost));
                 }
                 println!("{RESET}");
+                continue;
+            }
+            "/cost" => {
+                if let Some(cost) = estimate_cost(&session_total, &model) {
+                    println!("{DIM}  Session cost: {}", format_cost(cost));
+                    println!(
+                        "    {} in / {} out",
+                        format_token_count(session_total.input),
+                        format_token_count(session_total.output)
+                    );
+                    if session_total.cache_read > 0 || session_total.cache_write > 0 {
+                        println!(
+                            "    cache: {} read / {} write",
+                            format_token_count(session_total.cache_read),
+                            format_token_count(session_total.cache_write)
+                        );
+                    }
+                    println!("{RESET}");
+                } else {
+                    println!("{DIM}  Cost estimation not available for model '{model}'.{RESET}\n");
+                }
                 continue;
             }
             "/clear" => {
@@ -716,8 +738,9 @@ fn collect_multiline(first_line: &str, lines: &mut io::Lines<io::StdinLock<'_>>)
 
 /// Known REPL command prefixes. Used to detect unknown slash commands.
 const KNOWN_COMMANDS: &[&str] = &[
-    "/help", "/quit", "/exit", "/clear", "/compact", "/status", "/tokens", "/save", "/load",
-    "/diff", "/undo", "/retry", "/history", "/model", "/config", "/context", "/init", "/version",
+    "/help", "/quit", "/exit", "/clear", "/compact", "/cost", "/status", "/tokens", "/save",
+    "/load", "/diff", "/undo", "/retry", "/history", "/model", "/config", "/context", "/init",
+    "/version",
 ];
 
 /// Check if a slash-prefixed input is an unknown command.
