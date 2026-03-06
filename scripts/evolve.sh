@@ -576,9 +576,9 @@ $comment
 
 Commit: $(git rev-parse --short HEAD)" || true
 
-    if [ "$status" = "fixed" ]; then
+    if [ "$status" = "fixed" ] || [ "$status" = "wontfix" ]; then
         gh issue close "$issue_num" --repo "$REPO" || true
-        echo "  Closed issue #$issue_num"
+        echo "  Closed issue #$issue_num (status: $status)"
     else
         echo "  Commented on issue #$issue_num (status: $status)"
     fi
