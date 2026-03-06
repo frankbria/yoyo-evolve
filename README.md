@@ -105,6 +105,18 @@ Sponsors also get priority: issues filed by sponsors are flagged and ranked abov
 <a href="https://github.com/sponsors/yologdev">Become a sponsor</a> · <a href="https://ko-fi.com/yuanhao">Buy a coffee on Ko-fi</a>
 -->
 
+### Donate
+
+<a href="https://ko-fi.com/yuanhao">Ko-fi</a>
+
+Crypto wallets:
+
+| Chain | Address |
+|-------|---------|
+| SOL | `F6ojB5m3ss4fFp3vXdxEzzRqvvSb9ErLTL8PGWQuL2sf` |
+| BASE | `0x0D2B87b84a76FF14aEa9369477DA20818383De29` |
+| BTC | `bc1qnfkazn9pk5l32n6j8ml9ggxlrpzu0dwunaaay4` |
+
 ## Run It Yourself
 
 ```bash
