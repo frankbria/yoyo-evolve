@@ -78,6 +78,40 @@ pub fn estimate_cost(usage: &yoagent::Usage, model: &str) -> Option<f64> {
     Some(cost)
 }
 
+/// Get individual cost components for a usage and model.
+/// Returns (input_cost, cache_write_cost, cache_read_cost, output_cost) or None if model unknown.
+pub fn cost_breakdown(usage: &yoagent::Usage, model: &str) -> Option<(f64, f64, f64, f64)> {
+    let (input_per_m, cache_write_per_m, cache_read_per_m, output_per_m) = if model.contains("opus")
+    {
+        if model.contains("4-6")
+            || model.contains("4-5")
+            || model.contains("4.6")
+            || model.contains("4.5")
+        {
+            (5.0, 6.25, 0.50, 25.0)
+        } else {
+            (15.0, 18.75, 1.50, 75.0)
+        }
+    } else if model.contains("sonnet") {
+        (3.0, 3.75, 0.30, 15.0)
+    } else if model.contains("haiku") {
+        if model.contains("4-5") || model.contains("4.5") {
+            (1.0, 1.25, 0.10, 5.0)
+        } else {
+            (0.80, 1.0, 0.08, 4.0)
+        }
+    } else {
+        return None;
+    };
+
+    let input_cost = usage.input as f64 * input_per_m / 1_000_000.0;
+    let cache_write_cost = usage.cache_write as f64 * cache_write_per_m / 1_000_000.0;
+    let cache_read_cost = usage.cache_read as f64 * cache_read_per_m / 1_000_000.0;
+    let output_cost = usage.output as f64 * output_per_m / 1_000_000.0;
+
+    Some((input_cost, cache_write_cost, cache_read_cost, output_cost))
+}
+
 /// Format a cost in USD for display (e.g., "$0.0042", "$1.23").
 pub fn format_cost(cost: f64) -> String {
     if cost < 0.01 {
@@ -390,6 +424,42 @@ mod tests {
             total_tokens: 0,
         };
         assert!(estimate_cost(&usage, "gpt-4o").is_none());
+    }
+
+    #[test]
+    fn test_cost_breakdown_opus() {
+        let usage = yoagent::Usage {
+            input: 1_000_000,
+            output: 100_000,
+            cache_read: 500_000,
+            cache_write: 200_000,
+            total_tokens: 0,
+        };
+        let (input, cw, cr, output) = cost_breakdown(&usage, "claude-opus-4-6").unwrap();
+        // input: 1M * 5/M = 5.0
+        assert!((input - 5.0).abs() < 0.001);
+        // output: 100k * 25/M = 2.5
+        assert!((output - 2.5).abs() < 0.001);
+        // cache_read: 500k * 0.50/M = 0.25
+        assert!((cr - 0.25).abs() < 0.001);
+        // cache_write: 200k * 6.25/M = 1.25
+        assert!((cw - 1.25).abs() < 0.001);
+        // Total should match estimate_cost
+        let total = input + cw + cr + output;
+        let expected = estimate_cost(&usage, "claude-opus-4-6").unwrap();
+        assert!((total - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_cost_breakdown_unknown_model() {
+        let usage = yoagent::Usage {
+            input: 1000,
+            output: 1000,
+            cache_read: 0,
+            cache_write: 0,
+            total_tokens: 0,
+        };
+        assert!(cost_breakdown(&usage, "gpt-4o").is_none());
     }
 
     #[test]

@@ -303,6 +303,21 @@ async fn main() {
                             format_token_count(session_total.cache_write)
                         );
                     }
+                    // Show cost breakdown by category
+                    if let Some((input_cost, cw_cost, cr_cost, output_cost)) =
+                        cost_breakdown(&session_total, &model)
+                    {
+                        println!();
+                        println!("    Breakdown:");
+                        println!("      input:       {}", format_cost(input_cost));
+                        println!("      output:      {}", format_cost(output_cost));
+                        if cw_cost > 0.0 {
+                            println!("      cache write: {}", format_cost(cw_cost));
+                        }
+                        if cr_cost > 0.0 {
+                            println!("      cache read:  {}", format_cost(cr_cost));
+                        }
+                    }
                     println!("{RESET}");
                 } else {
                     println!("{DIM}  Cost estimation not available for model '{model}'.{RESET}\n");
