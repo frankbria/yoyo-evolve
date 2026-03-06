@@ -68,8 +68,11 @@ The `/tokens` command shows a visual progress bar of your context window:
 |---------|-------------|
 | `/diff` | Show `git status --short` and `git diff --stat` of uncommitted changes |
 | `/undo` | Revert all uncommitted changes (`git checkout -- .` and `git clean -fd`) |
+| `/health` | Run health checks: build, test, clippy, fmt — reports pass/fail with timing |
 
 The `/undo` command shows you what will be reverted before doing it.
+
+The `/health` command runs `cargo build`, `cargo test`, `cargo clippy`, and `cargo fmt --check`, reporting each result with timing. Useful for verifying the agent hasn't broken itself.
 
 ## Project Context
 

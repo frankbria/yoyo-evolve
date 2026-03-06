@@ -208,6 +208,7 @@ async fn main() {
                 println!("  /load [path]       Load session from file");
                 println!("  /diff              Show git diff summary of uncommitted changes");
                 println!("  /undo              Revert all uncommitted changes (git checkout)");
+                println!("  /health            Run health checks (build, test, clippy, fmt)");
                 println!("  /retry             Re-send the last user input");
                 println!("  /history           Show summary of conversation messages");
                 println!("  /version           Show yoyo version");
@@ -502,6 +503,25 @@ async fn main() {
                 }
                 continue;
             }
+            "/health" => {
+                println!("{DIM}  Running health checks...{RESET}");
+                let results = run_health_check();
+                let all_passed = results.iter().all(|(_, passed, _)| *passed);
+                for (name, passed, detail) in &results {
+                    let icon = if *passed {
+                        format!("{GREEN}✓{RESET}")
+                    } else {
+                        format!("{RED}✗{RESET}")
+                    };
+                    println!("  {icon} {name}: {detail}");
+                }
+                if all_passed {
+                    println!("\n{GREEN}  All checks passed ✓{RESET}\n");
+                } else {
+                    println!("\n{RED}  Some checks failed ✗{RESET}\n");
+                }
+                continue;
+            }
             "/history" => {
                 let messages = agent.messages();
                 if messages.is_empty() {
@@ -781,11 +801,55 @@ fn thinking_level_name(level: ThinkingLevel) -> &'static str {
     }
 }
 
+/// Run health checks (build, test, clippy, fmt) and return results.
+/// Each result is (name, passed, detail_message).
+fn run_health_check() -> Vec<(&'static str, bool, String)> {
+    let checks: Vec<(&str, &[&str])> = vec![
+        ("build", &["cargo", "build"]),
+        ("test", &["cargo", "test"]),
+        (
+            "clippy",
+            &["cargo", "clippy", "--all-targets", "--", "-D", "warnings"],
+        ),
+        ("fmt", &["cargo", "fmt", "--", "--check"]),
+    ];
+
+    let mut results = Vec::new();
+    for (name, args) in checks {
+        let start = std::time::Instant::now();
+        let output = std::process::Command::new(args[0])
+            .args(&args[1..])
+            .output();
+        let elapsed = format_duration(start.elapsed());
+        match output {
+            Ok(o) if o.status.success() => {
+                results.push((name, true, format!("ok ({elapsed})")));
+            }
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                let first_line = stderr.lines().next().unwrap_or("(unknown error)");
+                results.push((
+                    name,
+                    false,
+                    format!(
+                        "FAIL ({elapsed}): {}",
+                        truncate_with_ellipsis(first_line, 80)
+                    ),
+                ));
+            }
+            Err(e) => {
+                results.push((name, false, format!("ERROR: {e}")));
+            }
+        }
+    }
+    results
+}
+
 /// Known REPL command prefixes. Used to detect unknown slash commands.
 const KNOWN_COMMANDS: &[&str] = &[
     "/help", "/quit", "/exit", "/clear", "/compact", "/cost", "/status", "/tokens", "/save",
-    "/load", "/diff", "/undo", "/retry", "/history", "/model", "/think", "/config", "/context",
-    "/init", "/version",
+    "/load", "/diff", "/undo", "/health", "/retry", "/history", "/model", "/think", "/config",
+    "/context", "/init", "/version",
 ];
 
 /// Check if a slash-prefixed input is an unknown command.
@@ -829,8 +893,8 @@ mod tests {
     fn test_command_help_recognized() {
         let commands = [
             "/help", "/quit", "/exit", "/clear", "/compact", "/config", "/context", "/init",
-            "/status", "/tokens", "/save", "/load", "/diff", "/undo", "/retry", "/history",
-            "/model", "/think", "/version",
+            "/status", "/tokens", "/save", "/load", "/diff", "/undo", "/health", "/retry",
+            "/history", "/model", "/think", "/version",
         ];
         for cmd in &commands {
             assert!(
@@ -901,6 +965,23 @@ mod tests {
         assert_eq!(thinking_level_name(ThinkingLevel::Low), "low");
         assert_eq!(thinking_level_name(ThinkingLevel::Medium), "medium");
         assert_eq!(thinking_level_name(ThinkingLevel::High), "high");
+    }
+
+    #[test]
+    fn test_health_check_function() {
+        // run_health_check should return results for each check
+        let results = run_health_check();
+        assert!(
+            !results.is_empty(),
+            "Health check should return at least one result"
+        );
+        for (name, passed, _) in &results {
+            assert!(!name.is_empty(), "Check name should not be empty");
+            // In the test environment, at minimum cargo build should pass
+            if *name == "build" {
+                assert!(passed, "cargo build should pass in test environment");
+            }
+        }
     }
 
     #[test]

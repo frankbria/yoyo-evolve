@@ -80,6 +80,7 @@ pub fn print_help() {
     println!("  /save [path]      Save session to file");
     println!("  /load [path]      Load session from file");
     println!("  /diff             Show git diff summary");
+    println!("  /health           Run health checks (build, test, clippy, fmt)");
     println!();
     println!("Environment:");
     println!("  ANTHROPIC_API_KEY  API key for Anthropic (required)");
