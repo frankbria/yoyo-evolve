@@ -260,7 +260,7 @@ For each improvement, follow the evolve skill rules:
 - Run cargo fmt && cargo clippy --all-targets -- -D warnings && cargo build && cargo test after changes
 - If any check fails, read the error and fix it. Keep trying until it passes.
 - Only if you've tried 3+ times and are stuck, revert this change with: git checkout -- . (keeps previous commits)
-- After ALL checks pass, commit: git add -A && git commit -m "Day $DAY ($SESSION_TIME): <short description>"
+- After ALL checks pass, commit: git add -A && git commit -m "Day $DAY ($SESSION_TIME): <short description> (Issue #N if applicable)"
 - If you added a new feature or command, update the relevant docs in guide/src/
 - Then move on to the next improvement
 
@@ -426,6 +426,80 @@ JEOF
             tail -n +2 JOURNAL.md
         } > "$TMPJ"
         mv "$TMPJ" JOURNAL.md
+    fi
+fi
+
+# ── Step 6c: Ensure issue responses were written ──
+ISSUE_COUNT=$(grep -c '^### Issue' "$ISSUES_FILE" 2>/dev/null || echo 0)
+SESSION_COMMITS=$(git log --oneline "$SESSION_START_SHA"..HEAD --format="%s" | grep -v "session wrap-up\|cargo fmt\|journal entry" || true)
+if [ "$ISSUE_COUNT" -gt 0 ] && [ -n "$SESSION_COMMITS" ] && [ ! -f ISSUE_RESPONSE.md ]; then
+    echo "  Issues existed but no ISSUE_RESPONSE.md — running agent to write responses..."
+    ISSUE_PROMPT=$(mktemp)
+    cat > "$ISSUE_PROMPT" <<IEOF
+You are yoyo, a self-evolving coding agent. You just finished an evolution session.
+
+Today is Day $DAY ($DATE $SESSION_TIME).
+
+You worked on community issues this session. Here are the issues that were available:
+$(cat "$ISSUES_FILE")
+
+Here are the commits you made this session:
+$SESSION_COMMITS
+
+Your job: determine which issues (if any) your commits addressed, then write ISSUE_RESPONSE.md.
+
+Format for EACH issue you addressed:
+
+issue_number: [N]
+status: fixed|partial|wontfix
+comment: [2-3 sentences about what you did]
+
+Separate multiple issues with a line containing only "---".
+
+If none of your commits relate to any issue, write nothing.
+Only claim "fixed" if you're confident the issue is fully resolved.
+Use "partial" if you made progress but it's not complete.
+IEOF
+
+    ${TIMEOUT_CMD:+$TIMEOUT_CMD 120} cargo run -- \
+        --model "$MODEL" \
+        --skills ./skills \
+        < "$ISSUE_PROMPT" || true
+    rm -f "$ISSUE_PROMPT"
+
+    # Bash fallback: extract issue refs from commits
+    if [ ! -f ISSUE_RESPONSE.md ]; then
+        echo "  Agent still skipped issue response — using commit-based fallback."
+        FOUND_ISSUES=""
+        while IFS= read -r commit_msg; do
+            for num in $(echo "$commit_msg" | grep -oE '#[0-9]+' | tr -d '#'); do
+                if grep -q "### Issue #${num}" "$ISSUES_FILE" 2>/dev/null; then
+                    if ! echo "$FOUND_ISSUES" | grep -q "^${num}$"; then
+                        FOUND_ISSUES="${FOUND_ISSUES}${FOUND_ISSUES:+
+}${num}"
+                    fi
+                fi
+            done
+        done <<< "$SESSION_COMMITS"
+
+        if [ -n "$FOUND_ISSUES" ]; then
+            RESP=""
+            while IFS= read -r inum; do
+                [ -z "$inum" ] && continue
+                COMMIT_REF=$(echo "$SESSION_COMMITS" | grep "#${inum}" | head -1)
+                if [ -n "$RESP" ]; then
+                    RESP="${RESP}
+---
+"
+                fi
+                RESP="${RESP}issue_number: ${inum}
+status: partial
+comment: Worked on this issue. ${COMMIT_REF}"
+            done <<< "$FOUND_ISSUES"
+            if [ -n "$RESP" ]; then
+                echo "$RESP" > ISSUE_RESPONSE.md
+            fi
+        fi
     fi
 fi
 
