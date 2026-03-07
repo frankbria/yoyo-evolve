@@ -9,14 +9,14 @@
 #   ANTHROPIC_API_KEY  — required
 #   REPO               — GitHub repo (default: yologdev/yoyo-evolve)
 #   MODEL              — LLM model (default: claude-opus-4-6)
-#   TIMEOUT            — Max session time in seconds (default: 3600)
+#   TIMEOUT            — Planning phase time budget in seconds (default: 1200)
 #   FORCE_RUN          — Set to "true" to bypass the bonus-run gate
 
 set -euo pipefail
 
 REPO="${REPO:-yologdev/yoyo-evolve}"
 MODEL="${MODEL:-claude-opus-4-6}"
-TIMEOUT="${TIMEOUT:-3600}"
+TIMEOUT="${TIMEOUT:-1200}"
 BIRTH_DATE="2026-02-28"
 DATE=$(date +%Y-%m-%d)
 SESSION_TIME=$(date +%H:%M)
@@ -34,7 +34,7 @@ echo "$DAY" > DAY_COUNT
 
 echo "=== Day $DAY ($DATE $SESSION_TIME) ==="
 echo "Model: $MODEL"
-echo "Timeout: ${TIMEOUT}s"
+echo "Plan timeout: ${TIMEOUT}s | Impl timeout: 900s/task"
 echo ""
 
 # ── Step 0: Fetch sponsors & bonus-run gate ──
@@ -312,9 +312,8 @@ Then STOP. Do not implement anything. Your job is planning only.
 PLANEOF
 
 AGENT_LOG=$(mktemp)
-# Planning gets 1/3 of total budget (min 15 min); remaining budget is split across impl tasks
-PLAN_TIMEOUT=$((TIMEOUT / 3))
-[ "$PLAN_TIMEOUT" -lt 900 ] && PLAN_TIMEOUT=900
+# TIMEOUT controls planning phase directly (default 20 min)
+PLAN_TIMEOUT="$TIMEOUT"
 PLAN_EXIT=0
 ${TIMEOUT_CMD:+$TIMEOUT_CMD "$PLAN_TIMEOUT"} "$YOYO_BIN" \
     --model "$MODEL" \
@@ -367,12 +366,8 @@ echo ""
 
 # ── Phase B: Implementation loop ──
 echo "  Phase B: Implementation..."
-TASK_COUNT=$(grep -c '^### Task' SESSION_PLAN.md 2>/dev/null || echo 1)
-# Divide remaining time budget across tasks (min 5 min per task)
-IMPL_BUDGET=$((TIMEOUT - PLAN_TIMEOUT))
-IMPL_TIMEOUT=$((IMPL_BUDGET / TASK_COUNT))
-[ "$IMPL_TIMEOUT" -lt 300 ] && IMPL_TIMEOUT=300
-[ "$IMPL_TIMEOUT" -gt 1200 ] && IMPL_TIMEOUT=1200
+# Fixed 15 min per implementation task
+IMPL_TIMEOUT=900
 TASK_NUM=0
 TASK_FAILURES=0
 while IFS= read -r task_line; do
