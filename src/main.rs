@@ -321,6 +321,7 @@ async fn main() {
                 println!("  /health            Run health checks (build, test, clippy, fmt)");
                 println!("  /retry             Re-send the last user input");
                 println!("  /run <cmd>         Run a shell command directly (no AI, no tokens)");
+                println!("  !<cmd>             Shortcut for /run");
                 println!("  /history           Show summary of conversation messages");
                 println!("  /version           Show yoyo version");
                 println!();
@@ -823,17 +824,21 @@ async fn main() {
                 }
                 continue;
             }
-            s if s.starts_with("/run ") => {
-                let cmd = s.trim_start_matches("/run ").trim();
+            s if s.starts_with("/run ") || (s.starts_with('!') && s.len() > 1) => {
+                let cmd = if s.starts_with("/run ") {
+                    s.trim_start_matches("/run ").trim()
+                } else {
+                    s[1..].trim()
+                };
                 if cmd.is_empty() {
-                    println!("{DIM}  usage: /run <command>{RESET}\n");
+                    println!("{DIM}  usage: /run <command>  or  !<command>{RESET}\n");
                 } else {
                     run_shell_command(cmd);
                 }
                 continue;
             }
             "/run" => {
-                println!("{DIM}  usage: /run <command>");
+                println!("{DIM}  usage: /run <command>  or  !<command>");
                 println!("  Runs a shell command directly (no AI, no tokens).{RESET}\n");
                 continue;
             }
@@ -1201,6 +1206,16 @@ mod tests {
     fn test_run_shell_command_failing() {
         // Non-zero exit should not panic
         run_shell_command("false");
+    }
+
+    #[test]
+    fn test_bang_shortcut_matching() {
+        // ! prefix should match for /run shortcut
+        let bang_matches = |s: &str| s.starts_with('!') && s.len() > 1;
+        assert!(bang_matches("!ls"));
+        assert!(bang_matches("!echo hello"));
+        assert!(bang_matches("! ls")); // space after bang is fine
+        assert!(!bang_matches("!")); // bare bang alone should not match
     }
 
     #[test]
