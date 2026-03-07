@@ -95,6 +95,7 @@ pub fn print_help() {
     println!("  /status           Show session info");
     println!("  /think [level]    Show or change thinking level (off/low/medium/high)");
     println!("  /tokens           Show token usage and context window");
+    println!("  /tree [depth]     Show project directory tree (default depth: 3)");
     println!("  /undo             Revert all uncommitted changes (git checkout)");
     println!("  /version          Show yoyo version");
     println!();

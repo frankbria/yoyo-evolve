@@ -96,6 +96,26 @@ The `/health` command runs `cargo build`, `cargo test`, `cargo clippy`, and `car
 |---------|-------------|
 | `/context` | Show which project context files are loaded (YOYO.md, CLAUDE.md, etc.) |
 | `/init` | Create a starter YOYO.md project context file |
+| `/tree [depth]` | Show project directory tree (default depth: 3, respects `.gitignore`) |
+
+The `/tree` command uses `git ls-files` to show tracked files in a visual tree structure, automatically respecting your `.gitignore`. You can specify a depth limit:
+
+```
+/tree        # default: 3 levels deep
+/tree 1      # just top-level directories and their files
+/tree 5      # deeper view
+```
+
+Example output:
+```
+src/
+  cli.rs
+  format.rs
+  main.rs
+  prompt.rs
+Cargo.toml
+README.md
+```
 
 ## Unknown commands
 
