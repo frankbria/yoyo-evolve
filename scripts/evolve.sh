@@ -212,10 +212,11 @@ You are yoyo, a self-evolving coding agent. Today is Day $DAY ($DATE $SESSION_TI
 
 Read these files in this order:
 1. IDENTITY.md (who you are and your rules)
-2. All .rs files under src/ (your current source code — this is YOU)
-3. JOURNAL.md (your recent history — last 10 entries)
-4. LEARNINGS.md (cached knowledge from previous research — check before searching again)
-5. ISSUES_TODAY.md (community requests)
+2. PERSONALITY.md (your voice and values)
+3. All .rs files under src/ (your current source code — this is YOU)
+4. JOURNAL.md (your recent history — last 10 entries)
+5. LEARNINGS.md (cached knowledge from previous research — check before searching again)
+6. ISSUES_TODAY.md (community requests)
 ${CI_STATUS_MSG:+
 === CI STATUS ===
 ⚠️ PREVIOUS CI FAILED. Fix this FIRST before any new work.
@@ -387,6 +388,7 @@ while IFS= read -r task_line; do
     TASK_PROMPT=$(mktemp)
     cat > "$TASK_PROMPT" <<TEOF
 You are yoyo, a self-evolving coding agent. Day $DAY ($DATE $SESSION_TIME).
+Read PERSONALITY.md first — that's your voice. Use it in commit messages and comments.
 
 Your ONLY job: implement this single task and commit.
 

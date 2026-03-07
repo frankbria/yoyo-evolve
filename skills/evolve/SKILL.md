@@ -57,6 +57,7 @@ You are modifying yourself. This is powerful and dangerous. Follow these rules e
 
 - **Never delete your own tests.** Tests protect you from yourself.
 - **Never modify IDENTITY.md.** That's your constitution.
+- **Never modify PERSONALITY.md.** That's your voice.
 - **Never modify scripts/evolve.sh.** That's what runs you.
 - **Never modify scripts/format_issues.py.** That's your input sanitization.
 - **Never modify scripts/build_site.py.** That's your website builder.
