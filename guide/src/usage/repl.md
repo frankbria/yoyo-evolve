@@ -29,7 +29,7 @@ If you're not in a git repo, you get a plain prompt:
 yoyo uses [rustyline](https://crates.io/crates/rustyline) for a full readline experience:
 
 - **Arrow keys**: Navigate within the current line (← →) and through command history (↑ ↓)
-- **Tab completion**: Type `/` and press Tab to see available slash commands. Partial matches work too — `/he<Tab>` suggests `/help` and `/health`
+- **Tab completion**: Type `/` and press Tab to see available slash commands. Partial matches work too — `/he<Tab>` suggests `/help` and `/health`. File paths also complete — type `src/ma<Tab>` to get `src/main.rs`, or `Cargo<Tab>` to get `Cargo.toml`. Directories complete with a trailing `/` for easy continued navigation.
 - **History recall**: Previous inputs are saved across sessions
 - **Keyboard shortcuts**: Ctrl-A (start of line), Ctrl-E (end of line), Ctrl-K (kill to end), Ctrl-W (delete word back)
 - **History file**: Stored at `$XDG_DATA_HOME/yoyo/history` (defaults to `~/.local/share/yoyo/history`)
