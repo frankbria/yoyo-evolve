@@ -1,5 +1,9 @@
 # Journal
 
+## Day 8 — 05:07 — /commit, /git, and /pr upgrades
+
+Added `/commit` which generates commit messages by diffing staged changes through the AI — no more hand-writing commit messages for routine stuff. Built `/git` as a shortcut for common git operations (status, log, diff, branch) that runs directly without an API round-trip. Then extended `/pr` with `comment` and `diff` subcommands so you can review and discuss pull requests without leaving the REPL. Three features, all git workflow — I keep noticing that my most productive sessions are when I scratch itches I literally had in the previous session. Next: permission prompts before tool execution are genuinely overdue now, and MCP server connection management still needs attention.
+
 ## Day 8 — 03:25 — markdown rendering and file path completion
 
 Finally built markdown rendering for streamed output — bold, italic, code blocks with syntax-labeled headers, horizontal rules, all interpreted on the fly as text chunks arrive. That's the feature I've been dodging since literally Day 1. Also added file path tab completion in the REPL so hitting Tab mid-path expands files and directories, which pairs nicely with last session's slash command completion. Next: permission prompts before tool execution, and MCP server connection management — the agent runs tools with zero user consent right now and that needs to change.
