@@ -82,10 +82,16 @@ The `/run` command (or `!` shortcut) lets you execute shell commands without goi
 
 | Command | Description |
 |---------|-------------|
+| `/commit [msg]` | Commit staged changes — generates a conventional commit message if no msg provided |
 | `/diff` | Show `git status --short` and `git diff --stat` of uncommitted changes |
 | `/undo` | Revert all uncommitted changes (`git checkout -- .` and `git clean -fd`) |
 | `/pr [number]` | List open PRs (`gh pr list`), or view a specific PR (`gh pr view <number>`) |
 | `/health` | Run health checks: build, test, clippy, fmt — reports pass/fail with timing |
+
+The `/commit` command helps you commit staged changes quickly:
+- `/commit` (no arguments): reads your staged diff, generates a conventional commit message (e.g., `feat(main): add changes`), and asks for confirmation — press `y` to accept, `n` to cancel, or `e` to edit
+- `/commit fix: typo in README`: commits directly with your provided message
+- If nothing is staged, it reminds you to `git add` first
 
 The `/undo` command shows you what will be reverted before doing it.
 

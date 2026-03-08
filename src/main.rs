@@ -18,6 +18,7 @@
 //! Commands:
 //!   /quit, /exit    Exit the agent
 //!   /clear          Clear conversation history
+//!   /commit [msg]   Commit staged changes (AI-generates message if no msg)
 //!   /model <name>   Switch model mid-session
 //!   /search <query> Search conversation history
 //!   /tree [depth]   Show project directory tree
@@ -439,6 +440,9 @@ async fn main() {
                 println!("{DIM}  /help              Show this help");
                 println!("  /quit, /exit       Exit yoyo");
                 println!("  /clear             Clear conversation history");
+                println!(
+                    "  /commit [msg]      Commit staged changes (AI-generates message if no msg)"
+                );
                 println!("  /compact           Compact conversation to save context space");
                 println!("  /config            Show all current settings");
                 println!("  /context           Show loaded project context files");
@@ -932,6 +936,80 @@ async fn main() {
                 }
                 continue;
             }
+            s if s == "/commit" || s.starts_with("/commit ") => {
+                let arg = s.strip_prefix("/commit").unwrap_or("").trim();
+                if !arg.is_empty() {
+                    // Direct commit with provided message
+                    let (ok, output) = run_git_commit(arg);
+                    if ok {
+                        println!("{GREEN}  ✓ {}{RESET}\n", output.trim());
+                    } else {
+                        eprintln!("{RED}  ✗ {}{RESET}\n", output.trim());
+                    }
+                } else {
+                    // AI-generate a commit message from staged diff
+                    match get_staged_diff() {
+                        None => {
+                            eprintln!("{RED}  error: not in a git repository{RESET}\n");
+                        }
+                        Some(diff) if diff.trim().is_empty() => {
+                            println!("{DIM}  nothing staged — use `git add` first{RESET}\n");
+                        }
+                        Some(diff) => {
+                            let suggested = generate_commit_message(&diff);
+                            println!("{DIM}  Suggested commit message:{RESET}");
+                            println!("    {BOLD}{suggested}{RESET}");
+                            eprint!(
+                                "\n  {DIM}({GREEN}y{RESET}{DIM})es / ({RED}n{RESET}{DIM})o / ({CYAN}e{RESET}{DIM})dit: {RESET}"
+                            );
+                            io::stderr().flush().ok();
+                            let mut response = String::new();
+                            if io::stdin().read_line(&mut response).is_ok() {
+                                let response = response.trim().to_lowercase();
+                                match response.as_str() {
+                                    "y" | "yes" | "" => {
+                                        let (ok, output) = run_git_commit(&suggested);
+                                        if ok {
+                                            println!("{GREEN}  ✓ {}{RESET}\n", output.trim());
+                                        } else {
+                                            eprintln!("{RED}  ✗ {}{RESET}\n", output.trim());
+                                        }
+                                    }
+                                    "e" | "edit" => {
+                                        println!("{DIM}  Enter your commit message:{RESET}");
+                                        eprint!("  > ");
+                                        io::stderr().flush().ok();
+                                        let mut custom_msg = String::new();
+                                        if io::stdin().read_line(&mut custom_msg).is_ok() {
+                                            let custom_msg = custom_msg.trim();
+                                            if custom_msg.is_empty() {
+                                                println!("{DIM}  (commit cancelled — empty message){RESET}\n");
+                                            } else {
+                                                let (ok, output) = run_git_commit(custom_msg);
+                                                if ok {
+                                                    println!(
+                                                        "{GREEN}  ✓ {}{RESET}\n",
+                                                        output.trim()
+                                                    );
+                                                } else {
+                                                    eprintln!(
+                                                        "{RED}  ✗ {}{RESET}\n",
+                                                        output.trim()
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        println!("{DIM}  (commit cancelled){RESET}\n");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             "/context" => {
                 let files = cli::list_project_context_files();
                 if files.is_empty() {
@@ -1164,6 +1242,101 @@ fn auto_compact_if_needed(agent: &mut Agent) {
     }
 }
 
+/// Get staged changes (git diff --cached).
+/// Returns None if git fails, Some("") if nothing staged, or Some(diff) with the diff text.
+fn get_staged_diff() -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["diff", "--cached"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Run `git commit -m "<message>"` and return (success, output_text).
+fn run_git_commit(message: &str) -> (bool, String) {
+    match std::process::Command::new("git")
+        .args(["commit", "-m", message])
+        .output()
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let text = if stdout.is_empty() { stderr } else { stdout };
+            (output.status.success(), text)
+        }
+        Err(e) => (false, format!("error: {e}")),
+    }
+}
+
+/// Generate a conventional commit message from a diff using simple heuristics.
+/// This is a local, token-free approach — no AI calls needed.
+fn generate_commit_message(diff: &str) -> String {
+    let mut files_changed: Vec<String> = Vec::new();
+    let mut insertions = 0usize;
+    let mut deletions = 0usize;
+
+    for line in diff.lines() {
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            files_changed.push(path.to_string());
+        } else if line.starts_with('+') && !line.starts_with("+++") {
+            insertions += 1;
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            deletions += 1;
+        }
+    }
+
+    // Determine type prefix based on file paths
+    let prefix = if files_changed.iter().any(|f| f.contains("test")) {
+        "test"
+    } else if files_changed
+        .iter()
+        .any(|f| f.ends_with(".md") || f.starts_with("docs/") || f.starts_with("guide/"))
+    {
+        "docs"
+    } else if files_changed
+        .iter()
+        .any(|f| f.starts_with(".github/") || f.starts_with("scripts/") || f == "Cargo.toml")
+    {
+        "chore"
+    } else if deletions > insertions * 2 {
+        "refactor"
+    } else {
+        "feat"
+    };
+
+    // Build a concise scope from changed files
+    let scope = if files_changed.len() == 1 {
+        let f = &files_changed[0];
+        let name = f.rsplit('/').next().unwrap_or(f);
+        // Strip extension for scope
+        name.split('.').next().unwrap_or(name).to_string()
+    } else if files_changed.len() <= 3 {
+        files_changed
+            .iter()
+            .map(|f| {
+                let name = f.rsplit('/').next().unwrap_or(f);
+                name.split('.').next().unwrap_or(name).to_string()
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    } else {
+        format!("{} files", files_changed.len())
+    };
+
+    let summary = if deletions == 0 && insertions > 0 {
+        "add changes"
+    } else if insertions == 0 && deletions > 0 {
+        "remove code"
+    } else {
+        "update code"
+    };
+
+    format!("{prefix}({scope}): {summary}")
+}
+
 /// Run a shell command directly and print its output.
 /// Used by the /run command to execute without going through the AI.
 fn run_shell_command(cmd: &str) {
@@ -1367,9 +1540,9 @@ fn format_tree_from_paths(paths: &[String], max_depth: usize) -> String {
 
 /// Known REPL command prefixes. Used to detect unknown slash commands.
 const KNOWN_COMMANDS: &[&str] = &[
-    "/help", "/quit", "/exit", "/clear", "/compact", "/cost", "/status", "/tokens", "/save",
-    "/load", "/diff", "/undo", "/health", "/retry", "/history", "/search", "/model", "/think",
-    "/config", "/context", "/init", "/version", "/run", "/tree", "/pr",
+    "/help", "/quit", "/exit", "/clear", "/compact", "/commit", "/cost", "/status", "/tokens",
+    "/save", "/load", "/diff", "/undo", "/health", "/retry", "/history", "/search", "/model",
+    "/think", "/config", "/context", "/init", "/version", "/run", "/tree", "/pr",
 ];
 
 /// Check if a slash-prefixed input is an unknown command.
@@ -1412,9 +1585,9 @@ mod tests {
     #[test]
     fn test_command_help_recognized() {
         let commands = [
-            "/help", "/quit", "/exit", "/clear", "/compact", "/config", "/context", "/init",
-            "/status", "/tokens", "/save", "/load", "/diff", "/undo", "/health", "/retry", "/run",
-            "/history", "/search", "/model", "/think", "/version", "/tree", "/pr",
+            "/help", "/quit", "/exit", "/clear", "/compact", "/commit", "/config", "/context",
+            "/init", "/status", "/tokens", "/save", "/load", "/diff", "/undo", "/health", "/retry",
+            "/run", "/history", "/search", "/model", "/think", "/version", "/tree", "/pr",
         ];
         for cmd in &commands {
             assert!(
@@ -1815,5 +1988,130 @@ mod tests {
         assert!(load_matches("/load myfile.json"));
         assert!(!load_matches("/loadfile"));
         assert!(!load_matches("/loadXYZ"));
+    }
+
+    #[test]
+    fn test_commit_command_recognized() {
+        assert!(!is_unknown_command("/commit"));
+        assert!(!is_unknown_command("/commit fix typo in README"));
+    }
+
+    #[test]
+    fn test_commit_command_matching() {
+        // /commit should match exact or with space separator, not /committing etc.
+        let commit_matches = |s: &str| s == "/commit" || s.starts_with("/commit ");
+        assert!(commit_matches("/commit"));
+        assert!(commit_matches("/commit fix: typo"));
+        assert!(commit_matches("/commit feat(cli): add commit command"));
+        assert!(!commit_matches("/committing"));
+        assert!(!commit_matches("/commits"));
+    }
+
+    #[test]
+    fn test_commit_arg_extraction() {
+        let input = "/commit feat: add new feature";
+        let arg = input.strip_prefix("/commit").unwrap_or("").trim();
+        assert_eq!(arg, "feat: add new feature");
+
+        // Bare /commit has empty arg
+        let input_bare = "/commit";
+        let arg_bare = input_bare.strip_prefix("/commit").unwrap_or("").trim();
+        assert!(arg_bare.is_empty());
+    }
+
+    #[test]
+    fn test_get_staged_diff_runs() {
+        // Should not panic; returns None if not in git repo, or Some (possibly empty)
+        let result = get_staged_diff();
+        // We're in a git repo in CI, so it should return Some
+        assert!(result.is_some(), "Should return Some in a git repo");
+    }
+
+    #[test]
+    fn test_generate_commit_message_basic() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,3 +1,5 @@
++// new comment
++use std::io;
+ fn main() {
+     println!(\"hello\");
+ }
+";
+        let msg = generate_commit_message(diff);
+        // Should produce a conventional commit format: type(scope): description
+        assert!(msg.contains('('), "Should have scope: {msg}");
+        assert!(msg.contains("):"), "Should have conventional format: {msg}");
+        assert!(msg.contains("main"), "Scope should mention 'main': {msg}");
+    }
+
+    #[test]
+    fn test_generate_commit_message_docs() {
+        let diff = "\
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,3 @@
+ # Project
++New docs line
+";
+        let msg = generate_commit_message(diff);
+        assert!(
+            msg.starts_with("docs("),
+            "Markdown changes should use docs prefix: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_generate_commit_message_multiple_files() {
+        let diff = "\
+diff --git a/src/a.rs b/src/a.rs
+--- a/src/a.rs
++++ b/src/a.rs
+@@ -1 +1,2 @@
++// change a
+diff --git a/src/b.rs b/src/b.rs
+--- a/src/b.rs
++++ b/src/b.rs
+@@ -1 +1,2 @@
++// change b
+diff --git a/src/c.rs b/src/c.rs
+--- a/src/c.rs
++++ b/src/c.rs
+@@ -1 +1,2 @@
++// change c
+diff --git a/src/d.rs b/src/d.rs
+--- a/src/d.rs
++++ b/src/d.rs
+@@ -1 +1,2 @@
++// change d
+";
+        let msg = generate_commit_message(diff);
+        // More than 3 files should show "N files"
+        assert!(
+            msg.contains("4 files"),
+            "Should show file count for many files: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_generate_commit_message_deletions_only() {
+        let diff = "\
+diff --git a/src/old.rs b/src/old.rs
+--- a/src/old.rs
++++ b/src/old.rs
+@@ -1,5 +1,2 @@
+-// removed line 1
+-// removed line 2
+-// removed line 3
+ fn keep() {}
+";
+        let msg = generate_commit_message(diff);
+        assert!(
+            msg.contains("remove code"),
+            "Pure deletion should say 'remove code': {msg}"
+        );
     }
 }

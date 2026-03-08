@@ -79,6 +79,7 @@ pub fn print_help() {
     println!("  /quit, /exit      Exit the agent");
     println!("  /clear            Clear conversation history");
     println!("  /compact          Compact conversation to save context space");
+    println!("  /commit [msg]     Commit staged changes (AI-generates message if no msg)");
     println!("  /config           Show all current settings");
     println!("  /context          Show loaded project context files");
     println!("  /cost             Show estimated session cost");
