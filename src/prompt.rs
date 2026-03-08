@@ -256,6 +256,7 @@ async fn run_prompt_once(agent: &mut Agent, input: &str) -> PromptResult {
     let mut tool_timers: HashMap<String, Instant> = HashMap::new();
     let mut collected_text = String::new();
     let mut retriable_error: Option<String> = None;
+    let mut md_renderer = MarkdownRenderer::new();
 
     loop {
         tokio::select! {
@@ -320,7 +321,10 @@ async fn run_prompt_once(agent: &mut Agent, input: &str) -> PromptResult {
                             in_text = true;
                         }
                         collected_text.push_str(&delta);
-                        print!("{}", delta);
+                        let rendered = md_renderer.render_delta(&delta);
+                        if !rendered.is_empty() {
+                            print!("{}", rendered);
+                        }
                         io::stdout().flush().ok();
                     }
                     AgentEvent::MessageUpdate {
@@ -380,6 +384,13 @@ async fn run_prompt_once(agent: &mut Agent, input: &str) -> PromptResult {
                 };
             }
         }
+    }
+
+    // Flush any remaining buffered markdown content
+    let remaining = md_renderer.flush();
+    if !remaining.is_empty() {
+        print!("{}", remaining);
+        io::stdout().flush().ok();
     }
 
     if in_text {

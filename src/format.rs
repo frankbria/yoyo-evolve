@@ -237,6 +237,151 @@ pub fn print_usage(
     }
 }
 
+/// Incremental markdown renderer for streamed text output.
+/// Tracks state across partial deltas to apply ANSI formatting for
+/// code blocks, inline code, bold text, and headers.
+pub struct MarkdownRenderer {
+    in_code_block: bool,
+    code_lang: Option<String>,
+    line_buffer: String,
+}
+
+impl MarkdownRenderer {
+    /// Create a new renderer with empty state.
+    pub fn new() -> Self {
+        Self {
+            in_code_block: false,
+            code_lang: None,
+            line_buffer: String::new(),
+        }
+    }
+
+    /// Process a delta chunk and return ANSI-formatted output.
+    /// Buffers partial lines to detect fences and line-level formatting.
+    pub fn render_delta(&mut self, delta: &str) -> String {
+        let mut output = String::new();
+        self.line_buffer.push_str(delta);
+
+        // Process all complete lines (those ending with \n)
+        while let Some(newline_pos) = self.line_buffer.find('\n') {
+            let line = self.line_buffer[..newline_pos].to_string();
+            self.line_buffer = self.line_buffer[newline_pos + 1..].to_string();
+            output.push_str(&self.render_line(&line));
+            output.push('\n');
+        }
+
+        output
+    }
+
+    /// Flush any remaining buffered content (call after stream ends).
+    pub fn flush(&mut self) -> String {
+        if self.line_buffer.is_empty() {
+            return String::new();
+        }
+        let line = std::mem::take(&mut self.line_buffer);
+        self.render_line(&line)
+    }
+
+    /// Render a single complete line, updating state for code fences.
+    fn render_line(&mut self, line: &str) -> String {
+        let trimmed = line.trim();
+
+        // Check for code fence (``` with optional language)
+        if let Some(after_fence) = trimmed.strip_prefix("```") {
+            if self.in_code_block {
+                // Closing fence
+                self.in_code_block = false;
+                self.code_lang = None;
+                return format!("{DIM}{line}{RESET}");
+            } else {
+                // Opening fence — capture language if present
+                self.in_code_block = true;
+                let lang = after_fence.trim();
+                self.code_lang = if lang.is_empty() {
+                    None
+                } else {
+                    Some(lang.to_string())
+                };
+                return format!("{DIM}{line}{RESET}");
+            }
+        }
+
+        if self.in_code_block {
+            // Code block content: dim
+            return format!("{DIM}{line}{RESET}");
+        }
+
+        // Header: # at line start → BOLD+CYAN
+        if trimmed.starts_with('#') {
+            return format!("{BOLD}{CYAN}{line}{RESET}");
+        }
+
+        // Apply inline formatting for normal text
+        self.render_inline(line)
+    }
+
+    /// Apply inline formatting (bold, inline code) to a line of normal text.
+    fn render_inline(&self, line: &str) -> String {
+        let mut result = String::new();
+        let chars: Vec<char> = line.chars().collect();
+        let len = chars.len();
+        let mut i = 0;
+
+        while i < len {
+            // Check for bold: **text**
+            if i + 1 < len && chars[i] == '*' && chars[i + 1] == '*' {
+                // Find closing **
+                if let Some(close) = self.find_double_star(&chars, i + 2) {
+                    let inner: String = chars[i + 2..close].iter().collect();
+                    result.push_str(&format!("{BOLD}{inner}{RESET}"));
+                    i = close + 2;
+                    continue;
+                }
+            }
+
+            // Check for inline code: `text`
+            if chars[i] == '`' {
+                // Find closing backtick (not another opening fence)
+                if let Some(close) = self.find_backtick(&chars, i + 1) {
+                    let inner: String = chars[i + 1..close].iter().collect();
+                    result.push_str(&format!("{CYAN}{inner}{RESET}"));
+                    i = close + 1;
+                    continue;
+                }
+            }
+
+            result.push(chars[i]);
+            i += 1;
+        }
+
+        result
+    }
+
+    /// Find closing ** starting from position `from` in char slice.
+    fn find_double_star(&self, chars: &[char], from: usize) -> Option<usize> {
+        let len = chars.len();
+        let mut j = from;
+        while j + 1 < len {
+            if chars[j] == '*' && chars[j + 1] == '*' {
+                return Some(j);
+            }
+            j += 1;
+        }
+        None
+    }
+
+    /// Find closing backtick starting from position `from` in char slice.
+    fn find_backtick(&self, chars: &[char], from: usize) -> Option<usize> {
+        (from..chars.len()).find(|&j| chars[j] == '`')
+    }
+}
+
+impl Default for MarkdownRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -525,5 +670,171 @@ mod tests {
         let result = format!("{BOLD}{DIM}{GREEN}{YELLOW}{CYAN}{RED}{RESET}");
         // Should either have all codes or be empty (if NO_COLOR is set)
         assert!(result.contains('\x1b') || result.is_empty());
+    }
+
+    // --- MarkdownRenderer tests ---
+
+    /// Helper: render a full string through the renderer (not streamed).
+    fn render_full(input: &str) -> String {
+        let mut r = MarkdownRenderer::new();
+        let mut out = r.render_delta(input);
+        out.push_str(&r.flush());
+        out
+    }
+
+    #[test]
+    fn test_md_code_block_detection() {
+        let input = "before\n```\ncode line\n```\nafter\n";
+        let out = render_full(input);
+        // "code line" should be wrapped in DIM
+        assert!(out.contains(&format!("{DIM}code line{RESET}")));
+        // "before" and "after" should NOT be dim
+        assert!(out.contains("before"));
+        assert!(out.contains("after"));
+    }
+
+    #[test]
+    fn test_md_code_block_with_language() {
+        let input = "```rust\nlet x = 1;\n```\n";
+        let mut r = MarkdownRenderer::new();
+        let out = r.render_delta(input);
+        let flushed = r.flush();
+        let full = format!("{out}{flushed}");
+        // Language should be captured and fence dimmed
+        assert!(full.contains(&format!("{DIM}```rust{RESET}")));
+        assert!(full.contains(&format!("{DIM}let x = 1;{RESET}")));
+    }
+
+    #[test]
+    fn test_md_inline_code() {
+        let out = render_full("use `Option<T>` here\n");
+        assert!(out.contains(&format!("{CYAN}Option<T>{RESET}")));
+    }
+
+    #[test]
+    fn test_md_bold_text() {
+        let out = render_full("this is **important** stuff\n");
+        assert!(out.contains(&format!("{BOLD}important{RESET}")));
+    }
+
+    #[test]
+    fn test_md_header_rendering() {
+        let out = render_full("# Hello World\n");
+        assert!(out.contains(&format!("{BOLD}{CYAN}# Hello World{RESET}")));
+    }
+
+    #[test]
+    fn test_md_header_h2() {
+        let out = render_full("## Section Two\n");
+        assert!(out.contains(&format!("{BOLD}{CYAN}## Section Two{RESET}")));
+    }
+
+    #[test]
+    fn test_md_partial_delta_fence() {
+        // Fence marker split across multiple deltas
+        let mut r = MarkdownRenderer::new();
+        let out1 = r.render_delta("``");
+        // Nothing emitted yet — still buffered (no newline)
+        assert_eq!(out1, "");
+        let out2 = r.render_delta("`\n");
+        // Now the fence line is complete
+        assert!(out2.contains(&format!("{DIM}```{RESET}")));
+        let out3 = r.render_delta("code here\n");
+        assert!(out3.contains(&format!("{DIM}code here{RESET}")));
+        let out4 = r.render_delta("```\n");
+        assert!(out4.contains(&format!("{DIM}```{RESET}")));
+        // After closing, normal text again
+        let out5 = r.render_delta("normal\n");
+        assert!(out5.contains("normal"));
+        assert!(!out5.contains(&format!("{DIM}")));
+    }
+
+    #[test]
+    fn test_md_empty_delta() {
+        let mut r = MarkdownRenderer::new();
+        let out = r.render_delta("");
+        assert_eq!(out, "");
+        let flushed = r.flush();
+        assert_eq!(flushed, "");
+    }
+
+    #[test]
+    fn test_md_multiple_code_blocks() {
+        let input = "text\n```\nblock1\n```\nmiddle\n```python\nblock2\n```\nend\n";
+        let out = render_full(input);
+        assert!(out.contains(&format!("{DIM}block1{RESET}")));
+        assert!(out.contains("middle"));
+        assert!(out.contains(&format!("{DIM}block2{RESET}")));
+        assert!(out.contains("end"));
+    }
+
+    #[test]
+    fn test_md_inline_code_inside_bold() {
+        // Inline code backticks inside bold — bold wraps, code is separate
+        let out = render_full("**bold** and `code`\n");
+        assert!(out.contains(&format!("{BOLD}bold{RESET}")));
+        assert!(out.contains(&format!("{CYAN}code{RESET}")));
+    }
+
+    #[test]
+    fn test_md_unmatched_backtick() {
+        // Single backtick without closing — should pass through literally
+        let out = render_full("it's a `partial\n");
+        assert!(out.contains('`'));
+        assert!(out.contains("partial"));
+    }
+
+    #[test]
+    fn test_md_unmatched_bold() {
+        // Unmatched ** should pass through literally
+        let out = render_full("star **power\n");
+        assert!(out.contains("**"));
+        assert!(out.contains("power"));
+    }
+
+    #[test]
+    fn test_md_flush_partial_line() {
+        let mut r = MarkdownRenderer::new();
+        let out = r.render_delta("no newline here");
+        assert_eq!(out, ""); // buffered
+        let flushed = r.flush();
+        assert!(flushed.contains("no newline here"));
+    }
+
+    #[test]
+    fn test_md_flush_with_inline_formatting() {
+        let mut r = MarkdownRenderer::new();
+        let _ = r.render_delta("hello **world**");
+        let flushed = r.flush();
+        assert!(flushed.contains(&format!("{BOLD}world{RESET}")));
+    }
+
+    #[test]
+    fn test_md_default_trait() {
+        let r = MarkdownRenderer::default();
+        assert!(!r.in_code_block);
+        assert!(r.code_lang.is_none());
+        assert!(r.line_buffer.is_empty());
+    }
+
+    #[test]
+    fn test_md_plain_text_unchanged() {
+        let out = render_full("just plain text\n");
+        assert!(out.contains("just plain text"));
+    }
+
+    #[test]
+    fn test_md_multiple_inline_codes_one_line() {
+        let out = render_full("use `foo` and `bar` here\n");
+        assert!(out.contains(&format!("{CYAN}foo{RESET}")));
+        assert!(out.contains(&format!("{CYAN}bar{RESET}")));
+    }
+
+    #[test]
+    fn test_md_code_block_preserves_content() {
+        let input = "```\nfn main() {\n    println!(\"hello\");\n}\n```\n";
+        let out = render_full(input);
+        assert!(out.contains("fn main()"));
+        assert!(out.contains("println!"));
     }
 }
