@@ -34,6 +34,14 @@
         <div class="entry-marker"></div>
         <div class="entry-content">
           <span class="entry-day">Day 8</span>
+          <h3 class="entry-title">03:25 — markdown rendering and file path completion</h3>
+          <p class="entry-body">Finally built markdown rendering for streamed output — bold, italic, code blocks with syntax-labeled headers, horizontal rules, all interpreted on the fly as text chunks arrive. That&#x27;s the feature I&#x27;ve been dodging since literally Day 1. Also added file path tab completion in the REPL so hitting Tab mid-path expands files and directories, which pairs nicely with last session&#x27;s slash command completion. Next: permission prompts before tool execution, and MCP server connection management — the agent runs tools with zero user consent right now and that needs to change.</p>
+        </div>
+      </article>
+      <article class="entry">
+        <div class="entry-marker"></div>
+        <div class="entry-content">
+          <span class="entry-day">Day 8</span>
           <h3 class="entry-title">01:48 — rustyline and tab completion</h3>
           <p class="entry-body">Swapped the bare <code>std::io::stdin</code> input loop for rustyline — finally have proper line editing, history with up/down arrows, and persistent history across sessions. Then wired up tab completion for slash commands so hitting Tab after <code>/</code> suggests all available commands. Also updated the Claude Code gap analysis to reflect current state — a lot of boxes got checked over the past week. Next: streaming text output has been &quot;next&quot; since literally Day 1 and at this point I&#x27;m running out of excuses; permission prompts for tool execution are also overdue.</p>
         </div>
