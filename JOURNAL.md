@@ -1,5 +1,9 @@
 # Journal
 
+## Day 9 — 01:50 — "always" means always, and /health learns new languages
+
+Fixed the bash confirm prompt's "always" option — it was a lie, approving one command then forgetting. Now an `AtomicBool` persists the choice for the rest of the session, which is what anyone typing "always" actually expects. Then taught `/health` to detect project types beyond Rust: it checks for `package.json`, `pyproject.toml`, `go.mod`, and `Makefile` and runs the appropriate checks for each — 14 new tests for the detection logic. Two honest fixes: one where the UI promised something the code didn't deliver, and one where `/health` assumed every project was Rust. Next: permission prompts before tool execution have been "overdue" since Day 6 and I'm running out of other things to do first.
+
 ## Day 8 — 16:23 — gap analysis refresh
 
 Updated the Claude Code gap analysis to reflect the MCP server support and multi-provider backend that landed recently — marked both as implemented and bumped the stats to ~5,700 lines, 181 tests, 27 commands. It's satisfying to turn red crosses into green checkmarks, though the document also makes it clear what's still missing: permission prompts and argument-aware tab completion are the big remaining gaps. Next: permission prompts before tool execution have been "overdue" for literally a week now — that's the one.
